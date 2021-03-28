@@ -6,24 +6,23 @@
 using namespace std;
 
 void print_help(){
-	string help="-i rozhranie\tprave jedno rozhranie, na ktorom se bude pocuvat."
-		"\t\tAk nebude tento parameter uvedeny, alebo bude uvedene len -i bez hodnoty,"
-		"\t\tvypise sa zoznam aktivnych rozhrani"
-		"-p cislo\tfiltrovenie paketov na danom rozhrani podla portu "
-		"\t\tak nebude tento parameter uvedeny, uvazuju sa vsetkyy porty"
-		"\t\tak je parameter uvedeny, moze se dany port vyskytnut ako v source,"
-		"\t\ttak v destination casti"
-		"-t | --tcp\tbude zobrazovat iba TCP pakety"
-		"-u | --udp\tbude zobrazovat iba UDP pakety"
-		"--icmp\tbude zobrazovat iba ICMPv4 a ICMPv6 pakety"
-		"--arp\tbude zobrazovat iba ARP rámce"
-		"-n pocet\turcuje pocet paketov, ktere sa maju zobrazit"
-		"\t\tak nie je uvedene, uvazuje sa zobrazene len jedneho paketu";
+	string help="-i rozhranie\tprave jedno rozhranie, na ktorom se bude pocuvat.\n"
+		"\t\tAk nebude tento parameter uvedeny, alebo bude uvedene len -i bez hodnoty,\n"
+		"\t\tvypise sa zoznam aktivnych rozhrani\n\n"
+		"-p cislo\tfiltrovenie paketov na danom rozhrani podla portu\n"
+		"\t\tak nebude tento parameter uvedeny, uvazuju sa vsetkyy porty\n"
+		"\t\tak je parameter uvedeny, moze se dany port vyskytnut ako v source,\n"
+		"\t\ttak v destination casti\n"
+		"-t | --tcp\tbude zobrazovat iba TCP pakety\n\n"
+		"-u | --udp\tbude zobrazovat iba UDP pakety\n\n"
+		"--icmp\t\tbude zobrazovat iba ICMPv4 a ICMPv6 pakety\n\n"
+		"--arp\t\tbude zobrazovat iba ARP rámce\n\n"
+		"-n pocet\turcuje pocet paketov, ktere sa maju zobrazit\n\n"
+		"\t\tak nie je uvedene, uvazuje sa zobrazene len jedneho paketu\n";
 	cout<<help<<endl;
 }
 
 auto parse_args(int argc, char** argv){
-
 	struct retVals {
 		bool tcp, udp, icmp, arp;
 		string interface, port;
@@ -41,7 +40,7 @@ auto parse_args(int argc, char** argv){
 		bool ok=true;
 		if((arg=="-i") || (arg=="--interface")){
 			if(interface==""){
-				if(argv[i+1][0]=='-'){
+				if(i+1==argc || argv[i+1][0]=='-'){
 					continue;
 				}else{
 					interface=argv[++i];
@@ -53,7 +52,7 @@ auto parse_args(int argc, char** argv){
 			
 		}else if(arg=="--port" || arg== "-p"){
 			if(port==""){
-				if(argv[i+1][0]=='-'){
+				if(i+1==argc || argv[i+1][0]=='-'){
 					cerr<<"Chyba: nespravna hodnota parametra \'port\'"<<endl;	
 					exit(1);
 				}else{
@@ -65,7 +64,7 @@ auto parse_args(int argc, char** argv){
 			}	
 		}else if(arg== "-n"){
 			if(n==0){
-				if(argv[i+1][0]=='-'){
+				if(i+1==argc || argv[i+1][0]=='-'){
 					cerr<<"Chyba: nespravna hodnota parametra \'n\'"<<endl;	
 					exit(1);
 				}else{
@@ -93,9 +92,9 @@ auto parse_args(int argc, char** argv){
 	}
 	return retVals {tcp, udp, icmp, arp ,interface, port, n};
 }
+
 int main(int argc, char** argv){
 	//cout<<argc<<endl;
-	parse_args(argc, argv);
 	auto [tcp, udp, icmp, arp, interface, port, n] = parse_args(argc, argv);
 	cout<<"tcp: "<<tcp<<endl;
 	cout<<"udp: "<<udp<<endl;
@@ -104,5 +103,16 @@ int main(int argc, char** argv){
 	cout<<"interface: "<<interface<<endl;
 	cout<<"port: "<<port<<endl;
 	cout<<"n: "<<n<<endl;
+	pcap_set_promisc();
+	if(interface==""){
+		pcap_if_t* alldevsp;
+		char  errbuf[PCAP_ERRBUF_SIZE];
+		int x;
+		x = pcap_findalldevs(&alldevsp, errbuf);
+		while(alldevsp!=NULL){
+			cout<<(alldevsp->name)<<endl;
+			alldevsp=alldevsp->next;
+		}
+	}
 	return 0;
 }
