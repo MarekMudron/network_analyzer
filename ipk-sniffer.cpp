@@ -2,6 +2,7 @@
 #include <iostream>
 #include <getopt.h>
 #include <string>
+#include <bitset>
 
 using namespace std;
 
@@ -93,6 +94,26 @@ auto parse_args(int argc, char** argv){
 	return retVals {tcp, udp, icmp, arp ,interface, port, n};
 }
 
+void list_active_devs(){
+
+		pcap_if_t* alldevsp;
+		char  errbuf[PCAP_ERRBUF_SIZE];
+		int x;
+		x = pcap_findalldevs(&alldevsp, errbuf);
+		while(alldevsp!=NULL){
+			bitset<16> y(alldevsp->flags);
+			//ak je zariadenie aktivne tak ho vypiseme
+			if(y[1]){
+				cout<<(alldevsp->name)<<endl;
+			}
+			alldevsp=alldevsp->next;
+		}
+}
+
+void got_packet(u_char* args, const struct pcap_pkthdr * header, const u_char *packet){
+	cout<<packet<<endl;
+}
+
 int main(int argc, char** argv){
 	//cout<<argc<<endl;
 	auto [tcp, udp, icmp, arp, interface, port, n] = parse_args(argc, argv);
@@ -103,16 +124,49 @@ int main(int argc, char** argv){
 	cout<<"interface: "<<interface<<endl;
 	cout<<"port: "<<port<<endl;
 	cout<<"n: "<<n<<endl;
-	pcap_set_promisc();
+	cout<<endl;
+
+	//ak interface nespecifikovany -> vypis aktivnych rozhrani
 	if(interface==""){
-		pcap_if_t* alldevsp;
-		char  errbuf[PCAP_ERRBUF_SIZE];
-		int x;
-		x = pcap_findalldevs(&alldevsp, errbuf);
-		while(alldevsp!=NULL){
-			cout<<(alldevsp->name)<<endl;
-			alldevsp=alldevsp->next;
-		}
+		list_active_devs();	
+		return 0;
 	}
+
+
+	char  errbuf[PCAP_ERRBUF_SIZE];
+	pcap_t* handle = pcap_create(interface.c_str(), errbuf);
+	// ak chyba nastavovania promiskuitneho modu -> exit
+	if(pcap_set_promisc(handle, 1)){
+		cerr<<"Chyba nastavovania promiskuitneho modu"<<endl;
+		exit(2);
+	}
+	// aktivacia pripojenia
+	int ret = pcap_activate(handle);
+
+	if(ret<0){
+		cerr<<"Nastala CHYBA pri aktivovani pripojenia k zariadeniu \'"<<interface<<"\'"<<endl;
+		cerr<<pcap_geterr(handle)<<endl;
+		exit(2);
+	}else if(ret > 0){
+		cerr<<"Pripojenie k zariadeniu \'"<<interface<<"\' prebehlo uspesne s varovaniami"<<endl;
+	}
+	/*string exp="";
+	if(udp && !tcp){
+		exp+="udp ";
+	}else if(tcp && !udp){
+		exp+="tcp ";
+	}else if(tcp && udp){
+		exp+="(tcp and udp) ";
+	}
+	if(port!=""){
+		exp+="port " + port;
+	}
+	cout<<exp<<endl;
+	*/
+	//struct bpf_program fp;
+
+
+	//ret=pcap_compile(handle,&fp,"",0,PCAP_NETMASK_UNKNOWN);
+	pcap_loop(handle, 10,got_packet,NULL);
 	return 0;
 }
