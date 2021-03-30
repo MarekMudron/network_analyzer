@@ -3,7 +3,10 @@
 #include <getopt.h>
 #include <string>
 #include <bitset>
-
+#include <sys/time.h>
+#include <cstring>
+#define SIZE_ETHERNET 14
+#define ETHER_ADDR_LEN 6
 using namespace std;
 
 void print_help(){
@@ -29,7 +32,7 @@ auto parse_args(int argc, char** argv){
 		string interface, port;
 		int n;
 	};
-	int n=0;
+	int n=1;
 	bool tcp=false,
 		 udp=false,
 		 icmp=false,
@@ -64,7 +67,7 @@ auto parse_args(int argc, char** argv){
 				exit(1);
 			}	
 		}else if(arg== "-n"){
-			if(n==0){
+			if(n==1){
 				if(i+1==argc || argv[i+1][0]=='-'){
 					cerr<<"Chyba: nespravna hodnota parametra \'n\'"<<endl;	
 					exit(1);
@@ -111,7 +114,67 @@ void list_active_devs(){
 }
 
 void got_packet(u_char* args, const struct pcap_pkthdr * header, const u_char *packet){
-	cout<<packet<<endl;
+	char time_buff [80];
+	struct tm *tim;
+	tim=localtime(&(header->ts.tv_sec));
+	strftime(time_buff, 80, "%Y-%m-%dT%X", tim);
+	cout<<time_buff<<" ";
+
+
+	struct ethernet_struct {
+		u_char src [ETHER_ADDR_LEN];
+		u_char dest [ETHER_ADDR_LEN];
+		u_short ether_type;
+	};
+	struct ip_struct {
+		u_char ip_vhl;		/* version << 4 | header length >> 2 */
+		u_char ip_tos;		/* type of service */
+		u_short ip_len;		/* total length */
+		u_short ip_id;		/* identification */
+		u_short ip_off;		/* fragment offset field */
+		u_char ip_ttl;		/* time to live */
+		u_char ip_p;		/* protocol */
+		u_short ip_sum;		/* checksum */
+		struct in_addr ip_src,ip_dst; /* source and dest address */
+	};
+
+	struct tcp_struct {
+		u_short th_sport;	/* source port */
+		u_short th_dport;	/* destination port */
+		u_int th_seq;		/* sequence number */
+		u_int th_ack;		/* acknowledgement number */
+		u_char th_offx2;	/* data offset, rsvd */
+	};
+
+	struct ethernet_struct *ethernet; /* The ethernet header */
+
+	const struct ip_struct *ip; /* The IP header */
+	const struct tcp_struct *tcp; /* The TCP header */
+	const char *payload; /* Packet payload */
+
+
+	ethernet=(struct ethernet_struct*)packet;
+	ip=(struct ip_struct*)(packet+SIZE_ETHERNET);
+	u_int size_ip = ip->ip_vhl & 0x0F;
+	tcp = (struct tcp_struct*)(packet + SIZE_ETHERNET+size_ip);
+	u_int size_tcp=((tcp->th_offx2 & 0xf0) >> 4)*4;
+
+	payload = (char *)(packet + SIZE_ETHERNET + size_ip + size_tcp);
+	
+	cout<<inet_ntoa(ip->ip_src)<<" : "<<tcp->th_sport;
+	cout<<" > "<<inet_ntoa(ip->ip_dst)<<" : "<<tcp->th_dport<<", length "<<strlen(payload)<<" bytes"<<endl;
+	cout<<payload<<endl;
+		
+
+	/*
+	const u_char *ip_header;
+	const u_char *tcp_header;
+	const u_char *payload;
+
+	ip_header = packet+SIZE_ETHERNET;
+	ip_header_length=(*ip_header & 0x0F)*4;
+	*/
+	cout<<endl;
 }
 
 int main(int argc, char** argv){
@@ -150,23 +213,46 @@ int main(int argc, char** argv){
 	}else if(ret > 0){
 		cerr<<"Pripojenie k zariadeniu \'"<<interface<<"\' prebehlo uspesne s varovaniami"<<endl;
 	}
-	/*string exp="";
+	string exp="";
+	// tcp / udp
 	if(udp && !tcp){
 		exp+="udp ";
 	}else if(tcp && !udp){
 		exp+="tcp ";
-	}else if(tcp && udp){
-		exp+="(tcp and udp) ";
 	}
+
+	// icmp / arp
+	if(icmp && !arp){
+		exp+="icmp ";
+	}else if(!icmp && arp){
+		exp+="arp ";
+	}
+
+	// port
 	if(port!=""){
-		exp+="port " + port;
-	}
+		exp += "port "+port;
+	}	
 	cout<<exp<<endl;
-	*/
-	//struct bpf_program fp;
 
 
-	//ret=pcap_compile(handle,&fp,"",0,PCAP_NETMASK_UNKNOWN);
-	pcap_loop(handle, 10,got_packet,NULL);
+
+
+	struct bpf_program t;
+
+	struct bpf_program fp;
+
+	if(pcap_compile(handle,&fp,"",0,PCAP_NETMASK_UNKNOWN)){
+		cerr<<"Chyba kompilovania filtra"<<endl;
+	}
+	if(ret=pcap_setfilter(handle, &fp)){
+		cerr<<"Chyba nastavovania filtra"<<endl;
+	}
+	struct pcap_pkthdr packet_header;
+
+	cout<<"Reading..."<<endl;
+	pcap_loop(handle, n,got_packet,NULL);
 	return 0;
 }
+
+
+
