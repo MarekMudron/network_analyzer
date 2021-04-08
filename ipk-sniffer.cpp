@@ -327,6 +327,7 @@ void handle_ipv6(const struct pcap_pkthdr* header, const u_char* packet){
 			return;
 	}
 	if(protocol=="UDP" || protocol=="TCP"){
+		//vypise obsah a informacie o UDP alebo TCP pakete
 		cout<<"IPv6 "<<protocol<<endl;
 		print_time(header);
 		cout<<" ";
@@ -338,6 +339,7 @@ void handle_ipv6(const struct pcap_pkthdr* header, const u_char* packet){
 		print_content(packet, header->caplen);
 		cout<<endl;
 	}else{
+		//vypise obsah ICMPv6 paketu
 		cout<<"IPv6 "<<protocol<<endl;
 		print_time(header);
 		cout<<" ";
@@ -391,6 +393,7 @@ void handle_ipv4(const struct pcap_pkthdr* header, const u_char* packet){
 			return;
 	}
 	if(ip->ip_p==IPPROTO_TCP || ip->ip_p==IPPROTO_UDP){
+		//vypis TCP alebo UDP paketu
 		cout<<"IPv4 "<<protocol<<endl;
 		print_time(header);
 		cout<<" "<<inet_ntoa(ip->ip_src)<<":"<<source_port<<" > ";
@@ -399,6 +402,7 @@ void handle_ipv4(const struct pcap_pkthdr* header, const u_char* packet){
 		print_content(packet, header->caplen);
 		cout<<endl;
 	}else{
+		//vypis ICMP paketu
 		cout<<"IPv4 "<<protocol<<endl;
 		print_time(header);
 		cout<<" "<<inet_ntoa(ip->ip_src)<<" > ";
@@ -433,7 +437,7 @@ void handle_arp(const struct pcap_pkthdr* header, const u_char* packet){
 	// bude treba rozsirit pre IPv6
 	struct arp_struct* arp = (struct arp_struct*)(packet+SIZE_ETHERNET);
 	if(ntohs(arp->ptype)==ETHERTYPE_IPV4){
-		cout<<"Protocol type: IPV4"<<endl;
+		//arp pouziva IPV4 protokol
 		print_time(header);
 		cout<<endl<<"Sender MAC: ";
 		print_mac(arp->sha);
@@ -448,6 +452,7 @@ void handle_arp(const struct pcap_pkthdr* header, const u_char* packet){
 		print_content(packet, header->caplen);
 		cout<<endl;
 	}else{
+		//ak tam je nieco ine tak je to zle
 		cout<<"Neznamy typ IP protokolu pri ARP"<<endl;
 		return;
 	}
@@ -499,6 +504,10 @@ int main(int argc, char** argv){
 		cerr<<"Pripojenie k zariadeniu \'"<<interface<<"\' prebehlo uspesne s varovaniami"<<endl;
 		exit(2);
 	}
+
+
+	//exp predstavuje filter ktory pomocou setfilter nastavime pre pcap
+	//v nasledujucich  podmienkach skladame tento filter z argumentov CLI
 	string exp="";
 	
 	// tcp / udp
