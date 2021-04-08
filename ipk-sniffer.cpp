@@ -510,39 +510,46 @@ int main(int argc, char** argv){
 	//v nasledujucich  podmienkach skladame tento filter z argumentov CLI
 	string exp="";
 	
-	// tcp / udp
-	bool ut=false;
-	if(udp && !tcp){
-		exp+="udp ";
-		ut=true;
-	}else if(tcp && !udp){
-		if(ut){
-			exp+="or tcp ";
+	bool s = false;
+	if(tcp){
+		exp+="tcp";
+		s=true;
+	}
+	if(udp){
+		if(s){
+			exp+=" or udp";
 		}else{
-			ut=true;
-			exp+="tcp ";
+			exp+="udp";
+			s=true;
+		}
+	}
+	if(icmp){
+		if(s){
+			exp+=" or icmp or icmp6";
+		}else{
+			exp+="icmp or icmp6";
+			s=true;
+		}
+	}
+	if(arp){
+		if(s){
+			exp+=" or arp";
+		}else{
+			exp+="arp";
+			s=true;
 		}
 	}
 
-	// icmp / arp
-	if(icmp && !arp){
-		if(ut){
-			exp+="or icmp or icmp6 ";
-		}else{
-			ut=true;
-			exp+="icmp or icmp6 ";
+	if(s){
+		exp="("+exp+")";
+		if(port != ""){
+			exp+=" and port "+port;
 		}
-	}else if(!icmp && arp){
-		if(ut){
-			exp+="or arp ";
-		}else{
-			exp+="arp ";
+	}else{
+		if(port != ""){
+			exp+="port "+port;
 		}
 	}
-	// port
-	if(port!=""){
-		exp += "port "+port;
-	}	
 
 	struct bpf_program fp;
 
