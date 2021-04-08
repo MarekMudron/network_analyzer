@@ -14,6 +14,7 @@
 using namespace std;
 
 void print_help(){
+	//vypis pomocneho hlasenia pri parametri -h | --help
 	string help="-i rozhranie\tprave jedno rozhranie, na ktorom se bude pocuvat.\n"
 		"\t\tAk nebude tento parameter uvedeny, alebo bude uvedene len -i bez hodnoty,\n"
 		"\t\tvypise sa zoznam aktivnych rozhrani\n\n"
@@ -31,12 +32,18 @@ void print_help(){
 }
 
 auto parse_args(int argc, char** argv){
+	//spracovanie argumentov z CLI
+	
+	//struktura ktoru vratime 
 	struct retVals {
 		bool tcp, udp, icmp, arp;
 		string interface, port;
 		int n;
 	};
+	// predvoleny pocet paketov je 1
 	int n=1;
+
+	//dalsie predvolene hodnoty
 	bool tcp=false,
 		 udp=false,
 		 icmp=false,
@@ -102,22 +109,23 @@ auto parse_args(int argc, char** argv){
 }
 
 void list_active_devs(){
-
-		pcap_if_t* alldevsp;
-		char  errbuf[PCAP_ERRBUF_SIZE];
-		int x;
-		x = pcap_findalldevs(&alldevsp, errbuf);
-		while(alldevsp!=NULL){
-			bitset<16> y(alldevsp->flags);
-			//ak je zariadenie aktivne tak ho vypiseme
-			if(y[1]){
-				cout<<(alldevsp->name)<<endl;
-			}
-			alldevsp=alldevsp->next;
+	//vypis pouzitelnych rozhrani
+	pcap_if_t* alldevsp;
+	char  errbuf[PCAP_ERRBUF_SIZE];
+	int x;
+	x = pcap_findalldevs(&alldevsp, errbuf);
+	while(alldevsp!=NULL){
+		bitset<16> y(alldevsp->flags);
+		//ak je zariadenie aktivne tak ho vypiseme
+		if(y[1]){
+			cout<<(alldevsp->name)<<endl;
 		}
+		alldevsp=alldevsp->next;
+	}
 }
 
 void print_content(const u_char* packet, u_int len){
+	//vypise obsah paketu v pozadovanej forme
 	int i=0,j = 0;
 	while(i < len){
 		cout<<"0x"<<setw(4)<<setfill('0')<<hex<<i<<":\t";
@@ -155,24 +163,50 @@ struct ethernet_struct {
 	u_short ether_type;
 };
 
-struct ip_struct {
-	u_char ip_vhl;		/* version << 4 | header length >> 2 */
-	u_char ip_tos;		/* type of service */
-	u_short ip_len;		/* total length */
-	u_short ip_id;		/* identification */
-	u_short ip_off;		/* fragment offset field */
-	u_char ip_ttl;		/* time to live */
-	u_char ip_p;		/* protocol */
-	u_short ip_sum;		/* checksum */
-	struct in_addr ip_src,ip_dst; /* source and dest address */
+struct ipv4_struct {
+	u_char ip_vhl;		
+	u_char ip_tos;	
+	u_short ip_len;
+	u_short ip_id;
+	u_short ip_off;
+	u_char ip_ttl;
+	u_char ip_p;
+	u_short ip_sum;
+	struct in_addr ip_src,ip_dst;
 };
 
+struct ipv6_struct {
+	u_int shit1;
+	u_short shit2;
+	u_char next_header;
+	u_char shit3;
+	u_char source_ip[16];
+	u_char dest_ip[16];	
+};
+
+
 struct tcp_struct {
-	u_short th_sport;	/* source port */
-	u_short th_dport;	/* destination port */
-	u_int th_seq;		/* sequence number */
-	u_int th_ack;		/* acknowledgement number */
-	u_char th_offx2;	/* data offset, rsvd */
+	u_short th_sport;
+	u_short th_dport;
+	u_int th_seq;	
+	u_int th_ack;
+	u_char th_offx2;
+};
+
+struct udp_struct {
+	u_short udp_sport;
+	u_short udp_dport;
+	u_short udp_len;
+	u_short udp_checksum;
+};
+
+struct icmp_struct {
+	u_int shit1;
+	u_int shit2;
+	u_int shit3;
+	u_int source_ip;
+	u_int destination_ip;
+	u_int shit4;
 };
 
 struct arp_struct {
@@ -181,98 +215,213 @@ struct arp_struct {
 	u_char hlen;
 	u_char plen;
 	unsigned short oper;
-	u_char sha[6]; // sender hardware address
-	u_char spa[4]; // sender protocol address
-	u_char tha[6]; // target hardware address
-	u_char tpa[4]; // target protocol address
+	u_char sha[6];
+	u_char spa[4];
+	u_char tha[6];
+	u_char tpa[4];
 };
 
 void print_time(const struct pcap_pkthdr* header){
-	char time_buff [80];
-	struct tm *tim;
-	tim=localtime(&(header->ts.tv_sec));
-	strftime(time_buff, 80, "%Y-%m-%dT%X", tim);
-	cout<<time_buff;
+	// vypise cas vo formate RFC3339
+	char buf [80];
+	struct tm *p = localtime(&(header->ts.tv_sec));
+    size_t len = strftime(buf, sizeof buf - 1, "%FT%T%z", p);
+    if (len > 1) {
+		char minute[] = { buf[len-2], buf[len-1], '\0'  };
+	    sprintf(buf + len - 2, ":%s", minute);
+	}
+	cout<<buf;
 }
 
-void handle_ipv4(const struct pcap_pkthdr* header, const u_char* packet){
+
+void print_ipv6(const u_char* val){
+	//vypise ipv6 adresu
+	for(int i = 0; i < 14; ++i){
+		cout<<setw(2)<<setfill('0')<<hex<<(int)val[i]<<setw(2)<<setfill('0')<<hex<<(int)val[i+1]<<":";
+		i++;
+	}
+		cout<<setw(2)<<setfill('0')<<hex<<(int)val[14]<<setw(2)<<setfill('0')<<hex<<(int)val[15];
+		cout<<dec;
+}
+
+void handle_ipv6(const struct pcap_pkthdr* header, const u_char* packet){
+	// funkcia na spracovanie a vypis IPv6 paketu
+	struct ipv6_struct* ip=(struct ipv6_struct*)(packet+SIZE_ETHERNET);
+	u_char* nh=&(ip->next_header);	
+	// spracovanie pomocnych hlaviciek IPv6
+	u_int offset=34;
+
+
+	//iterujeme cez extended headers v IPv6 pakete az kym sa nedostaneme na TCP alebo UDP alebo ICMP
+	if(*nh==6 || *nh==17 || *nh == 58 || *nh==59){
+		//tu sa nerobi nic
+	}else{
+		while(true){
+			nh+=offset;
+			if(*nh==0 || *nh==43|| *nh==60){
+				//hop-by-hop, routing, a este cosi
+				offset=8*(8+(u_char)(*(nh+8)));
+			}else if(*nh==44){
+				//fragment header
+				offset=64;
+			}else if(*nh==59){
+				//oh, shit. koniec hlaviciek
+				break;
+			}else if(*nh==6 || *nh==17 || *nh == 58){
+				break;
+			}else{
+				cerr<<"Neznamy header"<<endl;
+				cout<<"IPv6"<<endl;
+				print_time(header);
+				cout<<" "; 
+				print_ipv6(ip->source_ip);
+				cout<<" > "; 
+				print_ipv6(ip->dest_ip);
+				cout<<endl;
+				print_content(packet,header->caplen);
+				cout<<endl<<endl;
+				return;
+			}
+		}
+	}
+
+	//ak sme na no header tak vypiseme co mame a nezistujeme port a ani protokol
+	if(*nh==59){
+		cout<<"IPv6"<<endl;
+		print_time(header);
+		cout<<" "; 
+		print_ipv6(ip->source_ip);
+		cout<<" > "; 
+		print_ipv6(ip->dest_ip);
+		cout<<endl;
+		print_content(packet,header->caplen);
+		cout<<endl<<endl;
+		return;
+	}
+
+
+	string protocol;
+	//z destination optinos ideme zistit protokol
+	u_short source_port, dest_port;
 	
+	switch(*nh){
+		case 6:{
+				protocol="TCP";
+				const struct tcp_struct *tcp=(struct tcp_struct*)(nh+offset);
+				source_port=ntohs(tcp->th_sport);
+				dest_port=ntohs(tcp->th_dport);
+				break;
+			}
+		case 17:{
+				protocol="UDP";
+				const struct udp_struct *udp=(struct udp_struct*)(nh+offset);
+				source_port=ntohs(udp->udp_sport);
+				dest_port=ntohs(udp->udp_dport);
+			break;
+			}
+		case 58:
+			protocol="ICMP";
+			break;
+		default:
+			cout<<"Neznamy protokol"<<endl<<endl;
+			return;
+	}
+	if(protocol=="UDP" || protocol=="TCP"){
+		cout<<"IPv6 "<<protocol<<endl;
+		print_time(header);
+		cout<<" ";
+		print_ipv6(ip->source_ip);
+		cout<<":"<<source_port<<" > ";
+		print_ipv6(ip->dest_ip);
+		cout<<":"<<dest_port<<", ";
+		cout<<"length "<<header->caplen<<" bytes"<<endl;
+		print_content(packet, header->caplen);
+		cout<<endl;
+	}else{
+		cout<<"IPv6 "<<protocol<<endl;
+		print_time(header);
+		cout<<" ";
+		print_ipv6(ip->source_ip);
+		cout<<" > ";
+		print_ipv6(ip->dest_ip);
+		cout<<", ";
+		cout<<"length "<<header->caplen<<" bytes"<<endl;
+		print_content(packet, header->caplen);
+		cout<<endl;
+
+	}
 }
 
+
 void handle_ipv4(const struct pcap_pkthdr* header, const u_char* packet){
+	// spracovanie a vypis ipv4 paketu
+	const struct ipv4_struct* ip;
+	u_int size_ip_header;
 
-	const struct ip_struct* ip;
-	const struct tcp_struct *tcp;
-	const char* payload;
-	u_int size_ip;
-	u_int size_tcp;
+	ip=(struct ipv4_struct*)(packet+SIZE_ETHERNET);
+	size_ip_header = ((ip->ip_vhl) & 0x0f)*4;
 
-	ip=(struct ip_struct*)(packet+SIZE_ETHERNET);
-	//size_ip = ((ip->ip_vhl) & 0x0f)*4;
-	if(size_ip < 20){
+	if(size_ip_header < 20){
 		cerr<<"\t\tInvalid IP header size..."<<endl;
 		return;
 	}
 
+	string protocol;
+	u_short source_port, dest_port;
 	switch(ip->ip_p){
-		case IPPROTO_TCP:
-			protocol= "TCP";
-			handle_tcp(header, packet)
+		case IPPROTO_TCP:{
+				protocol="TCP";
+				const struct tcp_struct *tcp=(struct tcp_struct*)(packet+SIZE_ETHERNET+size_ip_header);
+				source_port=ntohs(tcp->th_sport);
+				dest_port=ntohs(tcp->th_dport);
+				break;
+			}
+		case IPPROTO_UDP:{
+				protocol="UDP";
+				const struct udp_struct *udp=(struct udp_struct*)(packet+SIZE_ETHERNET+size_ip_header);
+				source_port=ntohs(udp->udp_sport);
+				dest_port=ntohs(udp->udp_dport);
 			break;
-		case IPPROTO_UDP:
-			handle_udp(header, packet)
-			break;
+			}
 		case IPPROTO_ICMP:
-			protocol= "ICMP";
-			handle_icmp(header, packet)
+			protocol="ICMP";
 			break;
-		/*
-		case IPPROTO_IP:
-			protocol= "IP";
-			break;
-			*/
 		default:
-			cout<<"Neznamy protokol"<<endl;
+			cout<<"Neznamy protokol"<<endl<<endl;
 			return;
 	}
-	return;
-
-	tcp=(struct tcp_struct*)(packet+SIZE_ETHERNET+size_ip);
-	size_tcp=(((tcp->th_offx2) & 0xf0)>>4)*4;
-	if(size_tcp < 20){
-		cerr<<"\t\tInvalid TCP header size..."<<endl;
-		return;
-	}
-
-	print_time(header);
-	cout<<endl<<" "<<inet_ntoa(ip->ip_src)<<" : "<<endl;
-	cout<<"To   "<<inet_ntoa(ip->ip_dst)<<endl;
-
-	payload=(char*)(packet+SIZE_ETHERNET+size_ip + size_tcp);
-	u_int payload_size = ntohs(ip->ip_len) - (size_ip+size_tcp);
-	//cout<<endl<<payload_size;
-	if(payload_size>0){
-		cout<<"length "<<payload_size<<" bytes"<<endl;
-		print_payload(payload, payload_size);
+	if(ip->ip_p==IPPROTO_TCP || ip->ip_p==IPPROTO_UDP){
+		cout<<"IPv4 "<<protocol<<endl;
+		print_time(header);
+		cout<<" "<<inet_ntoa(ip->ip_src)<<":"<<source_port<<" > ";
+		cout<<inet_ntoa(ip->ip_dst)<<":"<<dest_port<<", ";
+		cout<<"length "<<header->caplen<<" bytes"<<endl;
+		print_content(packet, header->caplen);
+		cout<<endl;
 	}else{
-		cout<<"INVALID SIZE"<<endl;
+		cout<<"IPv4 "<<protocol<<endl;
+		print_time(header);
+		cout<<" "<<inet_ntoa(ip->ip_src)<<" > ";
+		cout<<inet_ntoa(ip->ip_dst)<<", ";
+		cout<<"length "<<header->caplen<<" bytes"<<endl;
+		print_content(packet, header->caplen);
+		cout<<endl;
 
 	}
-	cout<<endl;
 }
 
-void handle_ipv6(const struct pcap_pkthdr* header, const u_char* packet){
-	print_time(header);
-}
 
 void print_mac(const u_char* val){
+	//funkcia na vypis mac adresy
+	//pouziva sa pri ARP packetoch
 	for(int i = 0; i < 5; ++i){
 		cout<<setw(2)<<setfill('0')<<hex<<(int)val[i]<<":";
 	}
 	cout<<setw(2)<<setfill('0')<<hex<<(int)val[5];
 }
 
-void print_ip(const u_char* val){
+void print_ipv4(const u_char* val){
+	//vypise ipv4 adresu
 	for(int i = 0; i < 3; ++i){
 		cout<<dec<<((int)(val[i]))<<".";
 	}
@@ -281,42 +430,37 @@ void print_ip(const u_char* val){
 
 
 void handle_arp(const struct pcap_pkthdr* header, const u_char* packet){
+	// bude treba rozsirit pre IPv6
 	struct arp_struct* arp = (struct arp_struct*)(packet+SIZE_ETHERNET);
-	print_time(header);
-	print_ip(arp->spa);
-	cout<<endl<<"Sender MAC: ";
-	print_mac(arp->sha);
-	cout<<endl<<"Sender IP: ";
-	print_ip(arp->spa);
-	cout<<endl<<"Target MAC: ";
-	print_mac(arp->tha);
-	cout<<endl<<"Target IP: ";
-	print_ip(arp->tpa);
-	cout<<endl<<"length: "<<header->caplen<<" bytes";
-	if(arp->htype==1){
-		cout<<endl<<"Ethernet type: Ethernet";
-	}
-	cout<<endl<<"Protocol type: ";
-	if(ntohs(arp->ptype)==0x0800){
-		cout<<"IPv4"<<endl;
-	}else if(ntohs(arp->ptype)==0x86dd){
-		cout<<"IPv6"<<endl;
-	}else{
+	if(ntohs(arp->ptype)==ETHERTYPE_IPV4){
+		cout<<"Protocol type: IPV4"<<endl;
+		print_time(header);
+		cout<<endl<<"Sender MAC: ";
+		print_mac(arp->sha);
+		cout<<endl<<"Sender IP: ";
+		print_ipv4(arp->spa);
+		cout<<endl<<"Target MAC: ";
+		print_mac(arp->tha);
+		cout<<endl<<"Target IP: ";
+		print_ipv4(arp->tpa);
+		cout<<endl<<"length: "<<header->caplen<<" bytes";
 		cout<<endl;
+		print_content(packet, header->caplen);
+		cout<<endl;
+	}else{
+		cout<<"Neznamy typ IP protokolu pri ARP"<<endl;
+		return;
 	}
-	print_content(packet, header->caplen);
-	cout<<endl;
-	cout<<endl;	
 }
 
 
 void got_packet(u_char* args, const struct pcap_pkthdr * header, const u_char *packet){
+	//funkcia volana z pcap_loop vzdy ked dostane paket
 	struct ethernet_struct* ethernet=(struct ethernet_struct*)packet;
 	const u_char* frame_content = packet;
 	if(ntohs(ethernet->ether_type)==ETHERTYPE_IPV4){
 		handle_ipv4(header, frame_content);
-	}if(ntohs(ethernet->ether_type)==ETHERTYPE_IPV6){
-		return;
+	}else if(ntohs(ethernet->ether_type)==ETHERTYPE_IPV6){
 		handle_ipv6(header, frame_content);
 	}else if(ntohs(ethernet->ether_type)==ETHERTYPE_ARP){
 		handle_arp(header, frame_content);
@@ -325,25 +469,9 @@ void got_packet(u_char* args, const struct pcap_pkthdr * header, const u_char *p
 	}
 }
 
-
-
-
-
-
-
-
-
 int main(int argc, char** argv){
-	//cout<<argc<<endl;
+	//zistime hodnotu premennych pomocou ktorych skladame filter
 	auto [tcp, udp, icmp, arp, interface, port, n] = parse_args(argc, argv);
-	cout<<"tcp: "<<tcp<<endl;
-	cout<<"udp: "<<udp<<endl;
-	cout<<"icmp: "<<icmp<<endl;
-	cout<<"arp: "<<arp<<endl;
-	cout<<"interface: "<<interface<<endl;
-	cout<<"port: "<<port<<endl;
-	cout<<"n: "<<n<<endl;
-	cout<<endl;
 
 	//ak interface nespecifikovany -> vypis aktivnych rozhrani
 	if(interface==""){
@@ -351,8 +479,8 @@ int main(int argc, char** argv){
 		return 0;
 	}
 
-
 	char  errbuf[PCAP_ERRBUF_SIZE];
+	//vytvorime spojenie s pozadovanym rozhranim
 	pcap_t* handle = pcap_create(interface.c_str(), errbuf);
 	// ak chyba nastavovania promiskuitneho modu -> exit
 	if(pcap_set_promisc(handle, 1)){
@@ -360,6 +488,7 @@ int main(int argc, char** argv){
 		exit(2);
 	}
 	// aktivacia pripojenia
+	pcap_set_immediate_mode(handle, 1);
 	int ret = pcap_activate(handle);
 
 	if(ret<0){
@@ -368,44 +497,58 @@ int main(int argc, char** argv){
 		exit(2);
 	}else if(ret > 0){
 		cerr<<"Pripojenie k zariadeniu \'"<<interface<<"\' prebehlo uspesne s varovaniami"<<endl;
+		exit(2);
 	}
 	string exp="";
+	
 	// tcp / udp
+	bool ut=false;
 	if(udp && !tcp){
 		exp+="udp ";
+		ut=true;
 	}else if(tcp && !udp){
-		exp+="tcp ";
+		if(ut){
+			exp+="or tcp ";
+		}else{
+			ut=true;
+			exp+="tcp ";
+		}
 	}
 
 	// icmp / arp
 	if(icmp && !arp){
-		exp+="icmp ";
+		if(ut){
+			exp+="or icmp or icmp6 ";
+		}else{
+			ut=true;
+			exp+="icmp or icmp6 ";
+		}
 	}else if(!icmp && arp){
-		exp+="arp ";
+		if(ut){
+			exp+="or arp ";
+		}else{
+			exp+="arp ";
+		}
 	}
-
 	// port
 	if(port!=""){
 		exp += "port "+port;
 	}	
 
-
-
-
-	struct bpf_program t;
-
 	struct bpf_program fp;
 
+	//skompilujeme pozadovany filter
 	if(pcap_compile(handle,&fp,exp.c_str(),0,PCAP_NETMASK_UNKNOWN)){
 		cerr<<"Chyba kompilovania filtra"<<endl;
+		exit(2);
 	}
+
+	//aplikujeme pozadovany filter
 	if(ret=pcap_setfilter(handle, &fp)){
 		cerr<<"Chyba nastavovania filtra"<<endl;
+		exit(2);
 	}
-	struct pcap_pkthdr packet_header;
-
-	cout<<"Reading..."<<endl;
-	pcap_set_timeout(handle, 100);
+	//cyklus ktora nacita n paketov
 	pcap_loop(handle, n,got_packet,NULL);
 	return 0;
 }
