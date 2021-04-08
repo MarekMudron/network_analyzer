@@ -1,6 +1,5 @@
 #include <pcap.h>
 #include <iostream>
-#include <getopt.h>
 #include <string>
 #include <bitset>
 #include <iomanip>
