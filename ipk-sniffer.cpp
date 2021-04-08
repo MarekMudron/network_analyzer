@@ -434,10 +434,9 @@ void print_ipv4(const u_char* val){
 
 
 void handle_arp(const struct pcap_pkthdr* header, const u_char* packet){
-	// bude treba rozsirit pre IPv6
 	struct arp_struct* arp = (struct arp_struct*)(packet+SIZE_ETHERNET);
 	if(ntohs(arp->ptype)==ETHERTYPE_IPV4){
-		//arp pouziva IPV4 protokol
+		cout<<"ARP"<<endl;
 		print_time(header);
 		cout<<endl<<"Sender MAC: ";
 		print_mac(arp->sha);
